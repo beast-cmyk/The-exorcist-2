@@ -33,8 +33,9 @@ public final class Facts {
 
     // --- time and weather ------------------------------------------------------------------------------------
 
+    /** The Nether and the End have no day, night or weather; everywhere else does. */
     public static boolean hasSky(World world) {
-        return world.getDimension().hasSkyLight() && !world.getDimension().hasCeiling();
+        return world.getRegistryKey() != World.NETHER && world.getRegistryKey() != World.END;
     }
 
     public static String timeOfDay(World world) {
