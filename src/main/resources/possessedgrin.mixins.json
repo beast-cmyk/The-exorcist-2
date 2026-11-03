@@ -1,0 +1,31 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.possessedgrin.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "DefaultAttributeContainerAccessor",
+    "DefaultAttributeRegistryMixin",
+    "EnderDragonEntityMixin",
+    "LivingEntityMixin",
+    "MobEntityAccessor",
+    "MobEntityMixin",
+    "PotionEntityMixin",
+    "WardenEntityMixin",
+    "requiem.BasePossessionHandlersMixin",
+    "requiem.PlayerAbilityControllerMixin",
+    "requiem.PlayerMovementAltererMixin"
+  ],
+  "client": [
+    "client.AnimalModelAccessor",
+    "client.DragonEntityModelMixin",
+    "client.EnderDragonEntityRendererMixin",
+    "client.GameRendererMixin",
+    "client.LivingEntityRendererMixin",
+    "client.MinecraftClientMixin",
+    "client.ModelPartAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

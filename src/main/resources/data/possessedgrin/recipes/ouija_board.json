@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PIP",
+    "PBP"
+  ],
+  "key": {
+    "P": { "tag": "minecraft:planks" },
+    "I": { "item": "minecraft:ink_sac" },
+    "B": { "item": "minecraft:bone" }
+  },
+  "result": {
+    "item": "possessedgrin:ouija_board",
+    "count": 1
+  }
+}

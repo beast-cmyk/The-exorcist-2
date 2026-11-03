@@ -1,0 +1,7 @@
+{
+  "minecraft:ender_dragon": {
+    "flightMode": "FORCED",
+    "inertia": 0.9,
+    "phasesThroughWalls": true
+  }
+}
