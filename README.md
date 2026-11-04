@@ -37,6 +37,12 @@ An addon for [Requiem](https://modrinth.com/mod/requiem) on **Minecraft 1.19.2 (
 - **The full rite**: one night an old priest with a lantern comes out of the fog for you. He and a younger priest
   read the rite while a bar fills; break their faith before it fills, or be cast out.
 
+## New in 7.2: plain talk, and Ollama
+- **Characters talk plainly now**, like real people: simple everyday words, short sentences, the feeling right in
+  them, no "literature teacher" speeches. (Set `voice_style=rich` in the config for the old, more descriptive way.)
+- **Ollama support**: a free AI that runs on your own computer, with no key and no limits (see "Ollama" below).
+  By default it's the **backup**: when Groq's free limit runs out, Ollama answers instead of the built-in lines.
+
 ## New in 7.1: voices that sound human
 Everything from 7.0 is still here. New:
 - **Every creature has an inner life.** Feelings that come and go (fear, dread, anger, defiance, grief, pity,
@@ -207,6 +213,28 @@ default) Groq is used if it has a key, otherwise Claude; set `provider=groq` or 
   the AI is busy, slow or out of free requests, the built-in line is used instead, so nothing ever goes silent.
 - Kin's cries and the village clerics' rite lines (one with every throw) stay built-in.
 - Free limits change; your current ones are shown in the Groq console.
+
+## Ollama (free, on your own computer, no limits)
+[Ollama](https://ollama.com) runs an AI model on your own computer. No key, no internet needed, no daily limit.
+It's slower than Groq (a few seconds to a few tens of seconds per reply on a laptop) and it uses your computer
+while you play, so the mod gives it short prompts and only one request at a time.
+
+1. Install Ollama from [ollama.com](https://ollama.com) and open it (it runs in the background).
+2. In a command window, run `ollama pull gemma3:4b` (about 3 GB, once).
+3. That's it. The config file already has `ollama=backup` and `ollama_model=gemma3:4b`.
+
+In `config/possessedgrin-ai.properties`:
+- `ollama=backup` (default): Groq (or Claude) first; Ollama takes over whenever they can't answer (free limit used
+  up, offline, a bad key).
+- `ollama=main`: Ollama for everything, even with a Groq key. The model is loaded as soon as you open a world, so
+  the first reply isn't the slowest.
+- `ollama=off`: never use it.
+- `ollama_model`: any model you've pulled. `gemma3:4b` is the best fit for a 16 GB laptop; `llama3.2:3b` is
+  faster but plainer.
+- `ollama_url`: leave it as `http://localhost:11434` unless you run Ollama somewhere else.
+
+If Ollama isn't running, or doesn't have the model, you get one message in chat saying what to do, and the mod
+tries again five minutes later. Meanwhile Groq or the built-in lines carry on.
 
 ## Kin
 Strike a creature of your body's own kind (a villager while you're a villager, any zombie while you're a zombie,
