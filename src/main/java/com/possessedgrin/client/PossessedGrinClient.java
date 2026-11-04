@@ -1,5 +1,6 @@
 package com.possessedgrin.client;
 
+import com.possessedgrin.haunt.Fx;
 import com.possessedgrin.haunt.Haunting;
 import com.possessedgrin.power.PossessedPowers;
 import com.possessedgrin.power.Power;
@@ -16,7 +17,7 @@ import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.network.PacketByteBuf;
 
-/** Client start-up: the power keys, and listening for head turns, screen shakes and possession stages. */
+/** Client start-up: the power keys, and listening for head turns, screen shakes, possession stages and body effects. */
 public final class PossessedGrinClient implements ClientModInitializer {
     private static final String KEY_CATEGORY = "category.possessedgrin.powers";
     private static final KeyBinding[] KEYS = new KeyBinding[Power.values().length];
@@ -45,7 +46,27 @@ public final class PossessedGrinClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
             Stages.clientClear();
             PossessedMotion.clear();
+            DemonPoses.clear();
+            TrueFace.clear();
         }));
+        ClientPlayNetworking.registerGlobalReceiver(Fx.ID, (client, handler, buf, responseSender) -> {
+            int kind = buf.readByte();
+            int entityId = buf.readVarInt();
+            int ticks = buf.readVarInt();
+            client.execute(() -> {
+                if (client.world == null) {
+                    return;
+                }
+                long now = client.world.getTime();
+                switch (kind) {
+                    case Fx.THRASH -> PossessedMotion.thrash(entityId, ticks);
+                    case Fx.RIGID -> DemonPoses.rigid(entityId, now + ticks);
+                    case Fx.TRUE_FACE -> TrueFace.flash(entityId, now, ticks);
+                    default -> {
+                    }
+                }
+            });
+        });
         ClientPlayNetworking.registerGlobalReceiver(PossessedPowers.HEAD_TURN, (client, handler, buf, responseSender) -> {
             int entityId = buf.readVarInt();
             client.execute(() -> {

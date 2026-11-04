@@ -93,6 +93,15 @@ public final class Haunting {
         shake(player, 0.8F, 30);
     }
 
+    /** Keeps a séance going while someone is still talking to the board. */
+    public static void extendSeance(PlayerEntity player, int ticks) {
+        Long until = SEANCE_UNTIL.get(player.getUuid());
+        long now = player.world.getTime();
+        if (until != null && until > now) {
+            SEANCE_UNTIL.put(player.getUuid(), Math.max(until, now + ticks));
+        }
+    }
+
     public static boolean inSeance(PlayerEntity player) {
         Long until = SEANCE_UNTIL.get(player.getUuid());
         return until != null && player.world.getTime() < until;

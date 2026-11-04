@@ -1,6 +1,14 @@
 package com.possessedgrin.power;
 
 import com.possessedgrin.PossessedGrin;
+import com.possessedgrin.PossessedGrinMod;
+import com.possessedgrin.haunt.AtticSounds;
+import com.possessedgrin.haunt.BedShaking;
+import com.possessedgrin.haunt.DemonIdolItem;
+import com.possessedgrin.haunt.Rite;
+import com.possessedgrin.haunt.SpiritBoard;
+import com.possessedgrin.haunt.Subliminal;
+import com.possessedgrin.voice.Conversation;
 import com.possessedgrin.haunt.Exorcism;
 import com.possessedgrin.haunt.Haunting;
 import com.possessedgrin.stage.Stages;
@@ -48,7 +56,13 @@ public final class PossessedPowers {
             Telekinesis.tick(world);
             ColdPresence.tick(world);
             Haunting.tick(world);
+            BedShaking.tick(world);
             Exorcism.tick(world);
+            Rite.tick(world);
+            SpiritBoard.tick(world);
+            AtticSounds.tick(world);
+            Subliminal.tick(world, PossessedGrinMod.DEMON_IDOL);
+            DemonIdolItem.tick(world, PossessedGrinMod.DEMON_IDOL);
         });
     }
 
@@ -63,7 +77,8 @@ public final class PossessedPowers {
         }
         Power power = powers[ordinal];
         int stage = Stages.of(host);
-        if (stage < power.stage) {
+        boolean invitedJump = power == Power.BODY_JUMP && Rite.offerOpen(player.getUuid());
+        if (stage < power.stage && !invitedJump) {
             long wait = Math.max(0L, (power.stage == Stages.POSSESSION ? Stages.POSSESSION_AT : Stages.OPPRESSION_AT) - Stages.elapsed(host));
             player.sendMessage(Text.literal("The " + host.getType().getName().getString().toLowerCase(Locale.ROOT)
                     + "'s soul still holds on. " + power.title + " awakens at stage " + roman(power.stage) + ", "
@@ -85,14 +100,36 @@ public final class PossessedPowers {
             case HEAD_TURN -> HeadTurn.use(player, host);
             case BILE -> Bile.use(player, host);
             case TAUNT -> Taunt.use(player, host);
+            case BODY_JUMP -> BodyJump.use(player, host);
         };
         if (used) {
             // Powers come back twice as fast during an Ouija séance
             readyAt[ordinal] = now + (Haunting.inSeance(player) ? power.cooldown / 2 : power.cooldown);
             // Every power makes the room react: your screen shakes, armor stands wobble, frames spin...
             Haunting.shake(player, power.shake, power.shakeTicks);
-            if (power != Power.TAUNT) {
+            if (power != Power.TAUNT && power != Power.BODY_JUMP) {
                 Haunting.rattle((ServerWorld) host.world, host, 6.0, power == Power.POLTERGEIST);
+            }
+            shakeTheirFaith(player, host, power);
+        }
+    }
+
+    /** Priests in the middle of a rite who see this lose some of their faith. */
+    private static void shakeTheirFaith(ServerPlayerEntity player, MobEntity host, Power power) {
+        switch (power) {
+            case HEAD_TURN -> Rite.witnessed(host, 10.0F, "Its head turned all the way around, cracking, and it stared at you backwards.");
+            case BILE -> Rite.witnessed(host, 12.0F, "It vomited green bile across the room, and some of it hit you.");
+            case TELEKINESIS -> Rite.witnessed(host, 8.0F, "Things rose into the air on their own and flew across the room.");
+            case POLTERGEIST -> Rite.witnessed(host, 6.0F, "Every door slammed at once and the whole room shook.");
+            case TELEPATHY -> {
+                // Pulling a secret out of a priest's own head
+                MobEntity read = Conversation.lookedAt(player, host, 24.0);
+                if (read != null && Rite.isPriest(read)) {
+                    Rite.shaken(read, 15.0F, "It just told you something about yourself nobody could know: a secret you've never said out loud to anyone.",
+                            "...How do you know that? Nobody knows that. Nobody.");
+                }
+            }
+            default -> {
             }
         }
     }

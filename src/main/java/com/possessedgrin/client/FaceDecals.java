@@ -37,7 +37,14 @@ public final class FaceDecals {
     public static final Identifier FACE = PossessedGrin.id("textures/entity/possessed/generic_face.png");
     public static final Identifier EYES = PossessedGrin.id("textures/entity/possessed/generic_eyes.png");
     public static final Identifier BLOOD = PossessedGrin.id("textures/entity/possessed/generic_blood.png");
+    /** The face once the body has rotted to the bone, and its pinpoint eyes. */
+    public static final Identifier SKULL = PossessedGrin.id("textures/entity/possessed/generic_skull.png");
+    public static final Identifier SKULL_EYES = PossessedGrin.id("textures/entity/possessed/generic_skull_eyes.png");
+    /** The demon's own face, seen for a few frames at a time. */
+    public static final Identifier TRUE_FACE = PossessedGrin.id("textures/entity/possessed/generic_true_face.png");
     static final int FULL_BRIGHT = 0xF00000;
+    /** Full block and sky light, for the true face: it shows even in the dark. */
+    private static final int LIT = 0xF000F0;
 
     /** How far in front of the face the decal floats, in model pixels: clears sheep wool and similar outer layers. */
     private static final float OFFSET = 0.65F;
@@ -59,7 +66,7 @@ public final class FaceDecals {
             return;
         }
         if (look.face()) {
-            VertexConsumer face = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(FACE));
+            VertexConsumer face = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(FACE));
             for (Target target : targets) {
                 draw(model, target, matrices, face, light, overlay, 1.0F);
             }
@@ -75,6 +82,28 @@ public final class FaceDecals {
             for (Target target : targets) {
                 draw(model, target, matrices, eyes, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, look.glow());
             }
+        }
+    }
+
+    /** A skull over the front of the head, with two burning points of light deep in its sockets. */
+    public static void renderSkull(EntityModel<?> model, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light, int overlay,
+                                   float glow) {
+        List<Target> targets = TARGETS.computeIfAbsent(model, FaceDecals::findTargets);
+        VertexConsumer skull = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(SKULL));
+        for (Target target : targets) {
+            draw(model, target, matrices, skull, light, overlay, 1.0F);
+        }
+        VertexConsumer eyes = vertexConsumers.getBuffer(RenderLayer.getEyes(SKULL_EYES));
+        for (Target target : targets) {
+            draw(model, target, matrices, eyes, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, glow);
+        }
+    }
+
+    /** The demon's true face over the head, fully lit. */
+    public static void renderTrueFace(EntityModel<?> model, MatrixStack matrices, VertexConsumerProvider vertexConsumers, int overlay) {
+        VertexConsumer face = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(TRUE_FACE));
+        for (Target target : TARGETS.computeIfAbsent(model, FaceDecals::findTargets)) {
+            draw(model, target, matrices, face, LIT, overlay, 1.0F);
         }
     }
 

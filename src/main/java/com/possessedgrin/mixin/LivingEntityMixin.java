@@ -1,5 +1,6 @@
 package com.possessedgrin.mixin;
 
+import com.possessedgrin.voice.Witness;
 import com.possessedgrin.stage.Stages;
 import com.possessedgrin.voice.Kinship;
 import net.minecraft.entity.LivingEntity;
@@ -28,6 +29,7 @@ public abstract class LivingEntityMixin {
     private void possessedgrin$spareKin(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
         if (cir.getReturnValueZ()) {
             Kinship.onHurt((LivingEntity) (Object) this, source);
+            Witness.onHurt((LivingEntity) (Object) this, source.getAttacker());
         }
     }
 }

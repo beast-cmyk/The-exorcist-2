@@ -4,7 +4,9 @@ import com.possessedgrin.client.DemonPoses;
 import com.possessedgrin.client.FaceDecals;
 import com.possessedgrin.client.HeadTurns;
 import com.possessedgrin.client.PossessedFaceFeatureRenderer;
+import com.possessedgrin.client.PossessedLook;
 import com.possessedgrin.client.PossessedMotion;
+import com.possessedgrin.client.PossessedWeltsFeatureRenderer;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.EntityRendererFactory;
@@ -33,8 +35,9 @@ import java.util.List;
  *   <li>the demon's body poses (levitating flat, spider-walk) and its possessed movement (hunch, heavy breathing,
  *       sway, convulsions) right after the mob is turned to face its way;</li>
  *   <li>after the model has posed itself for the frame: the head turn, twitches, the tilted head, the head bent
- *       back on walls, jerking marionette limbs, and limbs bent under the body in the spider-walk. All of it is
- *       undone once the frame is drawn.</li>
+ *       back on walls, the head snapping round at whoever stares, jerking marionette limbs, limbs bent under the
+ *       body in the spider-walk, the head stretched wide as a stage takes hold, and no nose on a skull. All of it
+ *       is undone once the frame is drawn.</li>
  * </ul>
  */
 @Mixin(LivingEntityRenderer.class)
@@ -56,6 +59,16 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, M extend
     private final List<ModelPart> possessedgrin$tweakedParts = new ArrayList<>();
     @Unique
     private final List<float[]> possessedgrin$tweaks = new ArrayList<>();
+    @Unique
+    private boolean possessedgrin$lateLayerAdded;
+    /** Head parts stretched wide this frame, with their original x and y scale. */
+    @Unique
+    private final List<ModelPart> possessedgrin$scaledParts = new ArrayList<>();
+    @Unique
+    private final List<float[]> possessedgrin$scales = new ArrayList<>();
+    /** Parts hidden this frame (a skull has no nose). */
+    @Unique
+    private final List<ModelPart> possessedgrin$hiddenParts = new ArrayList<>();
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void possessedgrin$addFaceLayer(EntityRendererFactory.Context ctx, M model, float shadowRadius, CallbackInfo ci) {
@@ -88,15 +101,47 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, M extend
                 this.possessedgrin$tweak(head, headYaw, headPitch, headRoll);
             }
         }
+        // A new stage takes hold: the head and its grin stretch too wide for a moment
+        float widen = PossessedMotion.widen(entity, tickDelta);
+        if (widen > 0.0F) {
+            for (ModelPart head : FaceDecals.headParts(this.model)) {
+                this.possessedgrin$scaledParts.add(head);
+                this.possessedgrin$scales.add(new float[]{head.xScale, head.yScale});
+                head.xScale *= 1.0F + 0.22F * widen;
+                head.yScale *= 1.0F - 0.06F * widen;
+            }
+        }
+        // Rotted to the bone: the skull has no nose to stick out of it
+        if (PossessedLook.decay(entity) >= 2) {
+            for (ModelPart head : FaceDecals.headParts(this.model)) {
+                ModelPart nose = ((ModelPartAccessor) (Object) head).possessedgrin$getChildren().get("nose");
+                if (nose != null && nose.visible) {
+                    nose.visible = false;
+                    this.possessedgrin$hiddenParts.add(nose);
+                }
+            }
+        }
+
         List<ModelPart> limbs = DemonPoses.limbs(this.model);
         boolean biped = this.model instanceof BipedEntityModel<?> && limbs.size() == 4;
         for (int i = 0; i < limbs.size(); i++) {
             float[] jerk = PossessedMotion.limb(entity, i, limbs.size(), biped, tickDelta);
-            float pitch = limbPitch + (jerk == null ? 0.0F : jerk[0]);
-            float roll = jerk == null ? 0.0F : jerk[1];
+            float[] posed = DemonPoses.limbPose(entity, limbs.get(i), i, biped, tickDelta);
+            float pitch = limbPitch + (jerk == null ? 0.0F : jerk[0]) + (posed == null ? 0.0F : posed[0]);
+            float roll = (jerk == null ? 0.0F : jerk[1]) + (posed == null ? 0.0F : posed[1]);
             if (pitch != 0.0F || roll != 0.0F) {
                 this.possessedgrin$tweak(limbs.get(i), 0.0F, pitch, roll);
             }
+        }
+    }
+
+    /** The welts go on last, after every layer the mob's own renderer added (clothing, robes...). */
+    @Inject(method = RENDER, at = @At("HEAD"))
+    private void possessedgrin$addLateLayer(T entity, float yaw, float tickDelta, MatrixStack matrices,
+                                            VertexConsumerProvider vertexConsumers, int light, CallbackInfo ci) {
+        if (!this.possessedgrin$lateLayerAdded) {
+            this.possessedgrin$lateLayerAdded = true;
+            this.features.add(new PossessedWeltsFeatureRenderer<>(this));
         }
     }
 
@@ -112,6 +157,18 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, M extend
         }
         this.possessedgrin$tweakedParts.clear();
         this.possessedgrin$tweaks.clear();
+        for (int i = 0; i < this.possessedgrin$scaledParts.size(); i++) {
+            ModelPart part = this.possessedgrin$scaledParts.get(i);
+            float[] scale = this.possessedgrin$scales.get(i);
+            part.xScale = scale[0];
+            part.yScale = scale[1];
+        }
+        this.possessedgrin$scaledParts.clear();
+        this.possessedgrin$scales.clear();
+        for (ModelPart part : this.possessedgrin$hiddenParts) {
+            part.visible = true;
+        }
+        this.possessedgrin$hiddenParts.clear();
     }
 
     @Unique

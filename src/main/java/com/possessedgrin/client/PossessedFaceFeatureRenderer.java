@@ -86,6 +86,17 @@ public class PossessedFaceFeatureRenderer<T extends LivingEntity, M extends Enti
             }
         }
 
+        // For a few frames, the thing inside shows its own face
+        if (TrueFace.showing(entity)) {
+            FaceDecals.renderTrueFace(model, matrices, vertexConsumers, overlay);
+            return;
+        }
+        // Rotted to the bone: a skull for a face, whatever the mob
+        if (look.decay() >= 2) {
+            FaceDecals.renderSkull(model, matrices, vertexConsumers, light, overlay, look.glow());
+            return;
+        }
+
         FaceTextures textures = this.cache.computeIfAbsent(entity.getType(), PossessedFaceFeatureRenderer::resolve).orElse(null);
         if (textures == null) {
             // No hand-made face for this mob: use the generic face decal on its head
@@ -101,7 +112,8 @@ public class PossessedFaceFeatureRenderer<T extends LivingEntity, M extends Enti
 
         try {
             if (look.face() && textures.face() != null) {
-                VertexConsumer face = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(textures.face()));
+                // Translucent: the high-detail faces have soft, see-through shadows around the eyes
+                VertexConsumer face = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(textures.face()));
                 model.render(matrices, face, light, overlay, 1.0F, 1.0F, 1.0F, 1.0F);
             }
             if (look.blood() && textures.blood() != null) {

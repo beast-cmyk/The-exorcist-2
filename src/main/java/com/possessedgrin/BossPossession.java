@@ -1,6 +1,8 @@
 package com.possessedgrin;
 
 import com.possessedgrin.haunt.Haunting;
+import com.possessedgrin.haunt.Invitations;
+import com.possessedgrin.power.BodyJump;
 import ladysnake.requiem.api.v1.event.requiem.PossessionStartCallback;
 import net.minecraft.entity.EntityType;
 import net.minecraft.util.Identifier;
@@ -19,12 +21,18 @@ public final class BossPossession {
     private static final Identifier REQUIEM_BLACKLIST_RULE = new Identifier("requiem", "blacklist");
     private static final Identifier ALLOW_BOSSES_RULE = PossessedGrin.id("allow_bosses");
     private static final Identifier SEANCE_RULE = PossessedGrin.id("seance");
+    private static final Identifier JUMP_RULE = PossessedGrin.id("invited");
 
     private BossPossession() {
     }
 
     /** Safe to call more than once: each call just re-registers the same rules. */
     public static void install() {
+        // A body jump, or a creature that invited you in: it lets you in, whatever it is
+        PossessionStartCallback.EVENT.register(JUMP_RULE, (target, possessor, simulate) ->
+                BodyJump.isJumping(possessor.getUuid()) || Invitations.isInvited(target)
+                        ? PossessionStartCallback.Result.ALLOW
+                        : PossessionStartCallback.Result.PASS);
         // During an Ouija séance, any creature accepts you (except the ones Requiem never allows, like ghosts)
         PossessionStartCallback.EVENT.register(SEANCE_RULE, (target, possessor, simulate) ->
                 Haunting.inSeance(possessor) ? PossessionStartCallback.Result.ALLOW : PossessionStartCallback.Result.PASS);

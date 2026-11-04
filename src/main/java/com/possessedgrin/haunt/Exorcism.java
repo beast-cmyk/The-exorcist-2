@@ -1,5 +1,6 @@
 package com.possessedgrin.haunt;
 
+import com.possessedgrin.voice.Witness;
 import com.possessedgrin.PossessedGrin;
 import com.possessedgrin.voice.Conversation;
 import com.possessedgrin.voice.Intent;
@@ -43,7 +44,8 @@ import java.util.UUID;
  *   <li><b>Breaking their faith:</b> taunt an exorcist (in chat or with the taunt key) and it falters: it stumbles
  *       over the rite and stops throwing for a while, and the rite loses some of its strength.</li>
  * </ul>
- * Every word of the rite is original.
+ * The full rite, with the old priest who comes out of the fog, is in {@link Rite}. Every word of the rite is
+ * original.
  */
 public final class Exorcism {
     private static final int BURNS_TO_CAST_OUT = 6;
@@ -107,10 +109,12 @@ public final class Exorcism {
     private static void burn(ServerWorld world, LivingEntity host, ServerPlayerEntity rider) {
         // The longer the rite has gone on, the more it burns
         host.damage(DamageSource.MAGIC, BURN_DAMAGE + Math.min(3, ritePower(rider, world.getTime()) / 2));
+        Witness.seen(host, null, "You saw holy water burn " + PossessedGrin.the(host) + " like acid.");
         world.playSound(null, host.getX(), host.getY(), host.getZ(), SoundEvents.BLOCK_FIRE_EXTINGUISH, SoundCategory.HOSTILE, 1.2F, 0.6F);
         world.playSound(null, host.getX(), host.getY(), host.getZ(), SoundEvents.ENTITY_GHAST_HURT, SoundCategory.HOSTILE, 0.8F, 0.5F);
         world.spawnParticles(ParticleTypes.LARGE_SMOKE, host.getX(), host.getBodyY(0.6), host.getZ(), 15, host.getWidth() / 2.0, host.getHeight() / 3.0, host.getWidth() / 2.0, 0.02);
 
+        Rite.burned(rider);
         int burns = BURNS.getOrDefault(rider.getUuid(), 0) + 1;
         if (burns >= BURNS_TO_CAST_OUT) {
             castOut(world, host, rider);
@@ -124,7 +128,7 @@ public final class Exorcism {
         Haunting.shake(rider, 0.9F, 15);
     }
 
-    private static void castOut(ServerWorld world, LivingEntity host, ServerPlayerEntity rider) {
+    static void castOut(ServerWorld world, LivingEntity host, ServerPlayerEntity rider) {
         BURNS.remove(rider.getUuid());
         LAST_BURN.remove(rider.getUuid());
         PossessionComponent.get(rider).stopPossessing();
@@ -164,8 +168,7 @@ public final class Exorcism {
                 continue;
             }
             for (VillagerEntity exorcist : world.getEntitiesByClass(VillagerEntity.class, host.getBoundingBox().expand(EXORCIST_RANGE),
-                    v -> v != host && v.isAlive() && !v.isBaby() && !v.isSleeping() && !PossessedGrin.isPossessed(v)
-                            && v.getVillagerData().getProfession() == VillagerProfession.CLERIC)) {
+                    v -> v != host && v.isAlive() && !v.isSleeping() && isExorcist(v))) {
                 if (now < EXORCIST_READY.getOrDefault(exorcist.getUuid(), 0L)) {
                     continue;
                 }
@@ -196,7 +199,8 @@ public final class Exorcism {
 
     public static boolean isExorcist(LivingEntity entity) {
         return entity instanceof VillagerEntity villager && !villager.isBaby() && !PossessedGrin.isPossessed(villager)
-                && villager.getVillagerData().getProfession() == VillagerProfession.CLERIC;
+                && villager.getVillagerData().getProfession() == VillagerProfession.CLERIC
+                && !villager.getScoreboardTags().contains(Rite.SHATTERED_TAG);
     }
 
     /** The exorcist speaks the next line of the rite. Returns how far into the rite it is. */
@@ -253,6 +257,7 @@ public final class Exorcism {
 
     /** Its faith wavers: it stops throwing for a while, and the rite loses ground. */
     private static void falter(MobEntity exorcist, MobEntity host) {
+        Rite.shaken(exorcist, 10.0F, "It mocked you to your face, and it knew exactly where to cut.", null);
         long now = exorcist.world.getTime();
         EXORCIST_READY.put(exorcist.getUuid(), now + FALTER_TICKS);
         RITE.computeIfPresent(exorcist.getUuid(), (id, step) -> Math.max(0, step - 2));

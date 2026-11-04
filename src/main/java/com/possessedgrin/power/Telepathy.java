@@ -97,6 +97,9 @@ public final class Telepathy {
         say(reader, Text.literal("You turn your mind inward, to the soul of " + PossessedGrin.the(host) + " (stage "
                 + PossessedPowers.roman(stage) + ", " + Stages.name(stage) + ")...").formatted(Formatting.DARK_AQUA, Formatting.BOLD));
         say(reader, Text.literal("  " + HostSoul.mood(stage)).formatted(Formatting.GRAY, Formatting.ITALIC));
+        long ticksLeft = Math.max(0L, Stages.LIFETIME - Math.max(0L, Stages.elapsed(host)));
+        say(reader, Text.literal("  You have drawn " + Math.round(Stages.drain(host) * 100.0F) + "% of its life. It has about "
+                + Math.max(1L, (ticksLeft + 600L) / 1200L) + " minutes left.").formatted(Formatting.DARK_GRAY, Formatting.ITALIC));
         say(reader, Text.literal("  ~ ").formatted(Formatting.DARK_AQUA)
                 .append(Text.literal("\"" + Conversation.fill(HostSoul.innerThought(host, stage), host, host, reader) + "\"")
                         .formatted(Formatting.AQUA, Formatting.ITALIC)));

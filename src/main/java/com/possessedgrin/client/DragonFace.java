@@ -67,7 +67,7 @@ public final class DragonFace {
         int overlay = OverlayTexture.DEFAULT_UV;
 
         if (look.face()) {
-            VertexConsumer eyes = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(EYES_FACE));
+            VertexConsumer eyes = vertexConsumers.getBuffer(RenderLayer.getEntityTranslucent(EYES_FACE));
             FaceDecals.quad(position, normal, eyes, skull.minX, skull.minY, skull.maxX, eyesBottom, skull.minZ - OFFSET, light, overlay);
             if (snout != null) {
                 VertexConsumer grin = vertexConsumers.getBuffer(RenderLayer.getEntityCutoutNoCull(GRIN));

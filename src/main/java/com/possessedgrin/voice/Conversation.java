@@ -2,6 +2,8 @@ package com.possessedgrin.voice;
 
 import com.possessedgrin.PossessedGrin;
 import com.possessedgrin.haunt.Exorcism;
+import com.possessedgrin.haunt.Rite;
+import com.possessedgrin.haunt.SpiritBoard;
 import com.possessedgrin.stage.Stages;
 import ladysnake.requiem.api.v1.possession.PossessionComponent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -80,6 +82,9 @@ public final class Conversation {
 
     private static final double HEARING_RANGE = 48.0;
     private static final int OVERHEAR_COOLDOWN = 200;
+    /** Who an ordinary village cleric is, for the AI. */
+    static final String CLERIC = "a village cleric: a plain country priest who has blessed harvests and buried the dead, "
+            + "and never in your life expected to face a real demon. You're frightened, but you hold your holy water and the old words of the rite, and you don't run.";
 
     private static final ConcurrentLinkedQueue<Heard> HEARD = new ConcurrentLinkedQueue<>();
     private static final List<Reply> REPLIES = new ArrayList<>();
@@ -93,6 +98,11 @@ public final class Conversation {
     public static void init() {
         // While you possess something, your chat doesn't go out as your own: the body says it, in the demon's voice
         ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
+            if (SpiritBoard.awaiting(sender.getUuid())) {
+                // You are the spirit in the board: your answer goes to the planchette, not to chat
+                HEARD.add(new Heard(sender.getUuid(), message.getContent().getString()));
+                return false;
+            }
             if (PossessionComponent.getHost(sender) == null) {
                 return true;
             }
@@ -156,7 +166,7 @@ public final class Conversation {
 
     private static void hear(ServerPlayerEntity player, String message) {
         MobEntity host = PossessionComponent.getHost(player);
-        if (message.isBlank()) {
+        if (message.isBlank() || SpiritBoard.answer(player, message)) {
             return;
         }
         if (host == null || !host.isAlive()) {
@@ -167,8 +177,12 @@ public final class Conversation {
             }
             return;
         }
+        if (Deception.speak(player, host, message)) {
+            return;     // "~": the soul's own voice, a lie
+        }
         int stage = Stages.of(host);
         speakAsDemon(player, host, stage, message);
+        Rite.heard(player, message);
         String text = Intent.normalize(message);
         MobEntity listener = text.contains(" soul") ? null : addressee(player, host, text);
         if (listener == null) {
@@ -176,7 +190,7 @@ public final class Conversation {
         } else {
             respond(player, host, listener, stage, message);
         }
-        bystanders(player, host, listener, false);
+        bystanders(player, host, listener, false, message);
     }
 
     // --- the demon's voice -----------------------------------------------------------------------------------
@@ -185,6 +199,11 @@ public final class Conversation {
      * What you typed comes out of the body: still almost its own voice in stage I, then red and wrong with a few
      * letters crawling (II), then deep red with more of them crawling (III). The body growls as it speaks.
      */
+    /** The body says this aloud, in the demon's voice. */
+    public static void demonSays(ServerPlayerEntity player, MobEntity host, String line) {
+        speakAsDemon(player, host, Stages.of(host), line);
+    }
+
     private static void speakAsDemon(ServerPlayerEntity player, MobEntity host, int stage, String message) {
         ServerWorld world = (ServerWorld) host.world;
         Random random = world.getRandom();
@@ -240,6 +259,11 @@ public final class Conversation {
      * The deeper the possession, the more of them react.
      */
     public static void bystanders(ServerPlayerEntity player, MobEntity host, @Nullable MobEntity listener, boolean loud) {
+        bystanders(player, host, listener, loud, null);
+    }
+
+    /** Everyone nearby reacts to what the body just said ({@code heard}) or did (null: a taunt). */
+    public static void bystanders(ServerPlayerEntity player, MobEntity host, @Nullable MobEntity listener, boolean loud, @Nullable String heard) {
         ServerWorld world = (ServerWorld) host.world;
         Random random = world.getRandom();
         int stage = Stages.of(host);
@@ -262,9 +286,19 @@ public final class Conversation {
             if (persona == Persona.BOSS) {
                 continue;
             }
+            if (Rite.isPriest(mob)) {
+                continue;       // the priests answer it in the rite itself
+            }
             if (Exorcism.isExorcist(mob)) {
                 // An exorcist never lets the demon have the last word
-                speak(player, host, mob, Exorcism.rebuke(mob, host), 10 + random.nextInt(15));
+                String rebuke = Exorcism.rebuke(mob, host);
+                if (heard != null) {
+                    AiVoice.say(player, host, mob, CLERIC, "You're the village cleric, facing a possessed " + PossessedGrin.kind(host)
+                            + " with holy water in your hand.", "(It just spoke in a voice that isn't its own: \"" + heard
+                            + "\". Answer it. You won't bargain with it.)", rebuke, 10 + random.nextInt(15));
+                } else {
+                    speak(player, host, mob, rebuke, 10 + random.nextInt(15));
+                }
                 OVERHEARD.put(mob.getUuid(), now + OVERHEAR_COOLDOWN);
                 reacted++;
                 continue;
@@ -272,8 +306,18 @@ public final class Conversation {
             if (random.nextFloat() > chance) {
                 continue;
             }
+            Feelings.feel(mob, stage >= Stages.OPPRESSION ? Feelings.Emotion.FEAR : Feelings.Emotion.DREAD, stage >= Stages.OPPRESSION ? 0.3F : 0.15F);
             String line = persona.line(stage >= Stages.OPPRESSION ? Persona.Topic.HORROR : Persona.Topic.OVERHEAR, random);
-            speak(player, host, mob, line, 10 + random.nextInt(25));
+            if (heard != null && reacted == 0) {
+                // The nearest one who heard it says what it really thinks, to the demon or to whoever's next to it
+                AiVoice.say(player, host, mob, null, "A demon has taken over a " + PossessedGrin.kind(host) + " near you"
+                                + (Kinship.isKin(mob, host) ? ", one of your own kind," : "") + " and you just overheard it.",
+                        "(The possessed " + PossessedGrin.kind(host) + " just said, in a deep voice that isn't its own: \"" + heard
+                                + "\". You weren't the one it was talking to. React: to it, to yourself, or to whoever is beside you.)",
+                        line, 10 + random.nextInt(25));
+            } else {
+                speak(player, host, mob, line, 10 + random.nextInt(25));
+            }
             if (stage >= Stages.OPPRESSION) {
                 horrified(world, mob, host, persona);
             }
@@ -307,14 +351,31 @@ public final class Conversation {
 
     /** Your taunt (the taunt key) lands on a creature: it reacts as if you'd insulted it. */
     public static void taunted(ServerPlayerEntity player, MobEntity host, MobEntity mob) {
+        taunted(player, host, mob, null);
+    }
+
+    /** The taunt key, aimed at this creature; {@code said}: the cruel thing the body said with it, if any. */
+    public static void taunted(ServerPlayerEntity player, MobEntity host, MobEntity mob, @Nullable String said) {
         Random random = mob.getRandom();
+        String what = "(The possessed " + PossessedGrin.kind(host) + " just laughed at you, hissed and growled, right in your face"
+                + (said == null ? "." : ", and said: \"" + said + "\".") + ")";
+        if (Rite.isPriest(mob)) {
+            Rite.shaken(mob, 10.0F, "It taunted you to your face" + (said == null ? "." : ": \"" + said + "\""), null);
+            return;
+        }
         if (Exorcism.isExorcist(mob)) {
-            speak(player, host, mob, Exorcism.answer(mob, host, Intent.TAUNT, random), 15 + random.nextInt(10));
+            String answer = Exorcism.answer(mob, host, Intent.TAUNT, random);
+            AiVoice.say(player, host, mob, CLERIC, "You're the village cleric, facing a possessed " + PossessedGrin.kind(host)
+                    + " with holy water in your hand.", what + " Your faith wavers.", answer, 15 + random.nextInt(10));
             return;
         }
         Persona persona = Persona.of(mob);
         tauntReaction((ServerWorld) mob.world, mob, host, persona);
-        speak(player, host, mob, persona.line(Persona.Topic.TAUNTED, random), 15 + random.nextInt(15));
+        String fallback = persona.line(Persona.Topic.TAUNTED, random);
+        boolean fights = persona.fighter() || (mob instanceof Angerable && persona != Persona.PET);
+        AiVoice.say(player, host, mob, null, "A demon has taken over a " + PossessedGrin.kind(host) + " near you and is tormenting you.",
+                what + (persona == Persona.BOSS ? " You sneer at it." : fights ? " You're going for it." : " You're backing away."),
+                fallback, 15 + random.nextInt(15));
     }
 
     /** Who you're talking to: the creature you're looking at, else the nearest one you named, else nobody. */
@@ -370,23 +431,49 @@ public final class Conversation {
         ServerWorld world = (ServerWorld) mob.world;
         String line;
 
-        if (Exorcism.isExorcist(mob)) {
-            // You can't bargain with an exorcist, but you can try to break its faith
-            speak(player, host, mob, Exorcism.answer(mob, host, intent, random), 15 + random.nextInt(15));
+        Feelings.heard(mob, intent, message, Kinship.isKin(mob, host));
+        if (Rite.isPriest(mob)) {
+            Rite.answer(player, host, mob, message, intent);
             return;
         }
+        if (Exorcism.isExorcist(mob)) {
+            // You can't bargain with an exorcist, but you can try to break its faith
+            String answer = Exorcism.answer(mob, host, intent, random);
+            AiVoice.say(player, host, mob, CLERIC, "You're the village cleric, facing a possessed " + PossessedGrin.kind(host)
+                    + " with holy water in your hand.", "(It said to you: \"" + message + "\"."
+                    + (intent == Intent.TAUNT ? " It got under your skin: your faith wavers and you stumble over the words of the rite."
+                    : " You won't bargain with it.") + ")", answer, 15 + random.nextInt(15));
+            return;
+        }
+        boolean angry = isAfter(mob, host, player);
+        String outcome = null;      // what the creature decided to do, so a real AI says the same thing
         if (intent.isCommand()) {
             line = command(player, host, mob, persona, stage, intent, random);
+            if (stage < Stages.POSSESSION) {
+                outcome = "You refuse: the demon's hold isn't strong enough to command you yet.";
+            } else if (intent == Intent.ATTACK && !canFight(mob)) {
+                outcome = "You can't fight anything, and you say so.";
+            } else if (intent == Intent.ATTACK && mob.getTarget() == null) {
+                outcome = "You ask what you're supposed to attack; the demon must look at it.";
+            } else {
+                outcome = "You obey the demon's command (" + intent.name().toLowerCase() + "), against your will.";
+                Witness.record(mob, "The demon forced you to obey it.");
+            }
         } else {
             line = switch (intent) {
                 case TAUNT -> {
                     tauntReaction(world, mob, host, persona);
+                    angry = persona.fighter() || (mob instanceof Angerable && persona != Persona.PET);
+                    outcome = persona == Persona.BOSS ? "You sneer at its insult."
+                            : angry ? "You are furious and attack the possessed body." : "You are frightened and run away from it.";
                     yield persona.line(Persona.Topic.TAUNTED, random);
                 }
                 case APOLOGY -> {
-                    if (persona != Persona.BOSS && isAfter(mob, host, player)) {
+                    if (persona != Persona.BOSS && angry) {
                         Kinship.pacify(mob);
                         Kinship.unprovoke(mob);
+                        angry = false;
+                        outcome = "You accept the apology, warily, and stop attacking.";
                     }
                     yield persona.line(Persona.Topic.APOLOGY, random);
                 }
@@ -416,15 +503,29 @@ public final class Conversation {
                     yield secret == null ? persona.line(Persona.Topic.SECRET_NONE, random)
                             : flavor(persona, random) + "I'll tell you a secret. " + secret;
                 }
-                default -> persona.line(Persona.Topic.UNKNOWN, random);
+                default -> {
+                    // Something it has no ready answer for: answer about whatever was asked, in its own voice
+                    String aboutIt = Phrasebook.aboutTopic(persona, message, mob, host, random);
+                    yield aboutIt != null && random.nextFloat() < 0.8F ? aboutIt : persona.line(Persona.Topic.UNKNOWN, random);
+                }
             };
+            if (intent == Intent.HELP && line.endsWith("I'm coming. Hold still.")) {
+                outcome = "You are coming over to help the possessed body, because it is one of your own.";
+            }
         }
 
-        if (stage >= Stages.POSSESSION && !persona.fighter() && intent != Intent.TAUNT && random.nextFloat() < 0.35F) {
-            String[] fear = {"*trembling* ", "*won't meet your eyes* ", "*whispering* ", "*shaking* "};
-            line = fear[random.nextInt(fear.length)] + line;
+        // The built-in generator: an opener and maybe an aside that fit its mood, so replies rarely repeat
+        String core = line;
+        Phrasebook.Mood mood = Feelings.mood(mob, Phrasebook.mood(persona, stage, Kinship.isKin(mob, host), angry));
+        if (intent != Intent.TAUNT && !intent.isCommand()) {
+            line = Phrasebook.dress(line, mood, random);
         }
-        speak(player, host, mob, line, 15 + random.nextInt(20));
+        // With an API key, a real AI writes the reply instead (and this line is used if it can't).
+        // For questions with a true answer, the AI is given that answer so it never makes one up.
+        if (!AiVoice.ask(player, host, mob, persona, stage, intent, message, line, intent.isFactual() ? core : null,
+                mood.feeling, outcome)) {
+            speak(player, host, mob, line, 15 + random.nextInt(20));
+        }
     }
 
     private static String command(ServerPlayerEntity player, MobEntity host, MobEntity mob, Persona persona, int stage,
@@ -476,6 +577,7 @@ public final class Conversation {
 
     /** Monsters (and anything that can be angered) come for you; the meek turn and run. Bosses just sneer. */
     private static void tauntReaction(ServerWorld world, MobEntity mob, MobEntity host, Persona persona) {
+        Witness.record(mob, "The demon mocked you to your face.");
         if (persona == Persona.BOSS) {
             return;
         }
@@ -497,8 +599,9 @@ public final class Conversation {
     }
 
     /** Run straight away from the possessed body. */
-    private static void flee(MobEntity mob, MobEntity host, double distance, double speed) {
-        Vec3d away = mob.getPos().subtract(host.getPos());
+    /** Sends the creature running a few blocks straight away from {@code from}. */
+    public static void flee(MobEntity mob, Entity from, double distance, double speed) {
+        Vec3d away = mob.getPos().subtract(from.getPos());
         away = new Vec3d(away.x, 0.0, away.z);
         if (away.lengthSquared() < 1.0E-4) {
             away = new Vec3d(1.0, 0.0, 0.0);

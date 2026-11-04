@@ -35,6 +35,8 @@ public final class Stages {
 
     public static final int OPPRESSION_AT = 240;    // 12 seconds
     public static final int POSSESSION_AT = 600;    // 30 seconds
+    /** How long a body lasts while you feed on it: one Minecraft day, 20 minutes. */
+    public static final int LIFETIME = 24000;
 
     /** Server to clients: varint host entity id, varlong ticks since the possession began (-1: it ended). */
     public static final Identifier SYNC = PossessedGrin.id("stage");
@@ -102,6 +104,12 @@ public final class Stages {
             return (elapsed - OPPRESSION_AT) / (float) (POSSESSION_AT - OPPRESSION_AT);
         }
         return 1.0F;
+    }
+
+    /** 0 to 1: how much of the body's life you have drawn out of it. At 1 it dies. */
+    public static float drain(@Nullable Entity host) {
+        long elapsed = elapsed(host);
+        return elapsed < 0 ? 0.0F : Math.min(1.0F, elapsed / (float) LIFETIME);
     }
 
     // --- server bookkeeping (used by StageDirector) ---

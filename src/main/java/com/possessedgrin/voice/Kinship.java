@@ -270,6 +270,7 @@ public final class Kinship {
             mob.dropStack(gift);
         }
         Conversation.speak(rider, host, mob, Persona.of(mob).line(Persona.Topic.KIN_HELP, mob.getRandom()), 0);
+        Witness.record(mob, "You helped the possessed body, because it's one of your own.");
     }
 
     private static ItemStack gift(MobEntity mob) {

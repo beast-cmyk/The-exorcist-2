@@ -104,6 +104,14 @@ public enum Intent {
                 : normalizedText.contains(" " + keyword + " ");
     }
 
+    /** Questions with a true answer the game knows (the real AI is told it, so it never makes one up). */
+    public boolean isFactual() {
+        return switch (this) {
+            case TIME, WEATHER, LOCATION, HOME, WORK, TRADE, SEES, OWNER, ENEMY, SECRET -> true;
+            default -> false;
+        };
+    }
+
     /** Commands are only obeyed once the possession is complete. */
     public boolean isCommand() {
         return this == FOLLOW || this == STAY || this == ATTACK;

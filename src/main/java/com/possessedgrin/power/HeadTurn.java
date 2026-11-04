@@ -1,5 +1,7 @@
 package com.possessedgrin.power;
 
+import com.possessedgrin.PossessedGrin;
+import com.possessedgrin.voice.Witness;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -47,6 +49,7 @@ public final class HeadTurn {
         PossessedPowers.sound(host, SoundEvents.BLOCK_BONE_BLOCK_BREAK, 1.5F, 0.5F);
         PossessedPowers.sound(host, SoundEvents.ENTITY_SKELETON_HURT, 0.8F, 0.4F);
         terrify((ServerWorld) host.world, player, host);
+        Witness.seen(host, null, "You saw " + PossessedGrin.the(host) + "'s head twist all the way around, with a crack.");
         return true;
     }
 

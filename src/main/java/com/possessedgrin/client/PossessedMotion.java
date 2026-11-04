@@ -1,9 +1,15 @@
 package com.possessedgrin.client;
 
+import com.possessedgrin.PossessedGrin;
 import com.possessedgrin.stage.Stages;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.Vec3f;
 import org.jetbrains.annotations.Nullable;
 
@@ -25,6 +31,10 @@ import java.util.Random;
  *       lurch, and single limbs jerk on their own as if pulled on strings.</li>
  *   <li><b>Taunts</b> (any stage): it throws its head back and shakes with laughter, cocks its head and bares its
  *       teeth to hiss, or drops its head and hunches to growl.</li>
+ *   <li><b>Watching back</b> (stage II on): catch it in your stare and its head snaps round to stare straight
+ *       back at you, with a crack, then slowly turns away again.</li>
+ *   <li><b>Thrashing</b> on a shaking bed, with arms flung about far harder than in any fit; a new stage makes
+ *       the head and grin stretch wide for a moment; a body rotted down to the bone is visibly thinner.</li>
  * </ul>
  * Render thread only.
  */
@@ -52,6 +62,14 @@ public final class PossessedMotion {
         float nextLimb;
         float tauntStart = -1000.0F;
         int tauntKind;
+        float thrashStart = -1000.0F;
+        float thrashLength;
+        float widenStart = -1000.0F;
+        float snapStart = -1000.0F;
+        float snapLength;
+        int snapAt = -1;
+        float nextSnap;
+        float nextLookCheck;
 
         State(int id, float now) {
             this.random = new Random(id * 31L + 7L);
@@ -64,6 +82,8 @@ public final class PossessedMotion {
 
     private static final Map<Integer, State> STATES = new HashMap<>();
     private static final Map<Integer, Integer> PENDING_TAUNTS = new HashMap<>();
+    private static final Map<Integer, Integer> PENDING_THRASH = new HashMap<>();
+    private static final float WIDEN_LENGTH = 30.0F;
     private static final float TAUNT_LENGTH = 34.0F;
 
     private PossessedMotion() {
@@ -72,6 +92,22 @@ public final class PossessedMotion {
     public static void clear() {
         STATES.clear();
         PENDING_TAUNTS.clear();
+        PENDING_THRASH.clear();
+    }
+
+    /** The server says this body thrashes for a while (the bed scene). */
+    public static void thrash(int entityId, int ticks) {
+        PENDING_THRASH.put(entityId, ticks);
+    }
+
+    /** 0 to 1: how far the grin and the head are stretched wide right now (just after a new stage takes hold). */
+    public static float widen(LivingEntity entity, float tickDelta) {
+        State state = STATES.get(entity.getId());
+        return state == null ? 0.0F : envelope(entity.age + tickDelta - state.widenStart, WIDEN_LENGTH);
+    }
+
+    private static boolean thrashing(State state, float now) {
+        return now - state.thrashStart < state.thrashLength;
     }
 
     /** The server says this body just taunted (0 laugh, 1 hiss, 2 growl). Starts on its next frame. */
@@ -93,6 +129,12 @@ public final class PossessedMotion {
         State state = STATES.computeIfAbsent(entity.getId(), id -> new State(id, now));
         if (state.lastStage > 0 && stage > state.lastStage) {
             convulse(state, now, stage >= Stages.POSSESSION ? 55.0F : 40.0F);      // the new stage takes hold
+            state.widenStart = now;                                                 // and the grin splits wide
+        }
+        Integer thrash = PENDING_THRASH.remove(entity.getId());
+        if (thrash != null) {
+            state.thrashStart = now;
+            state.thrashLength = thrash;
         }
         state.lastStage = stage;
         Integer taunt = PENDING_TAUNTS.remove(entity.getId());
@@ -113,6 +155,9 @@ public final class PossessedMotion {
         if (state.lastStage >= Stages.OPPRESSION && now >= state.nextFit) {
             convulse(state, now, state.lastStage >= Stages.POSSESSION ? 20.0F + state.random.nextInt(15) : 12.0F);
             state.nextFit = now + (state.lastStage >= Stages.POSSESSION ? 160 + state.random.nextInt(240) : 320 + state.random.nextInt(320));
+        }
+        if (thrashing(state, now)) {
+            return 1.0F;        // flung about without a pause for as long as the bed shakes
         }
         float into = now - state.convulseStart;
         return into >= 0.0F && into < state.convulseLength ? 1.0F - into / state.convulseLength : 0.0F;
@@ -149,6 +194,14 @@ public final class PossessedMotion {
             pitch -= hunch + breath;
             roll += full ? MathHelper.sin(now * 0.05F) * 4.0F : 0.0F;
         }
+        // A body fed on for most of its life stoops lower and trembles
+        float drain = Stages.drain(entity);
+        if (drain >= 0.75F) {
+            pitch -= 7.0F * Math.min(1.0F, (drain - 0.75F) * 8.0F);
+            if (drain >= 0.9F) {
+                roll += jitter(state.random, 1.2F);
+            }
+        }
         float taunt = taunting(state, now);
         if (taunt > 0.0F) {
             if (state.tauntKind == 0) {
@@ -170,7 +223,13 @@ public final class PossessedMotion {
         }
         float c = convulsion(state, now);
         if (c > 0.0F) {
-            shake(entity, matrices, state, c);
+            shake(entity, matrices, state, thrashing(state, now) ? 1.5F : c);
+        }
+        // Wasted down to the bone: the body is thinner, its clothes hang off it
+        int decay = PossessedLook.decay(entity);
+        if (decay > 0) {
+            float thin = decay >= 2 ? 0.86F : 0.94F;
+            matrices.scale(thin, 1.0F, thin);
         }
     }
 
@@ -235,6 +294,16 @@ public final class PossessedMotion {
             }
         }
 
+        // From stage II: catch someone staring, and the head snaps around to stare straight back
+        if (stage >= Stages.OPPRESSION) {
+            float[] snap = snap(entity, state, now, tickDelta);
+            if (snap != null) {
+                yaw += snap[0];
+                pitch += snap[1];
+                roll *= 0.3F;
+            }
+        }
+
         float taunt = taunting(state, now);
         if (taunt > 0.0F) {
             switch (state.tauntKind) {
@@ -260,6 +329,58 @@ public final class PossessedMotion {
             roll += jitter(state.random, 0.6F * c);
         }
         return yaw == 0.0F && pitch == 0.0F && roll == 0.0F ? null : new float[]{yaw, pitch, roll};
+    }
+
+    /** Yaw and pitch that point the head at whoever caught its eye, or null. */
+    @Nullable
+    private static float[] snap(LivingEntity entity, State state, float now, float tickDelta) {
+        if (now >= state.nextLookCheck) {
+            state.nextLookCheck = now + 10.0F;
+            if (now >= state.nextSnap && now - state.snapStart > state.snapLength) {
+                LivingEntity watcher = watcher(entity);
+                if (watcher != null) {
+                    state.snapStart = now;
+                    state.snapLength = 25 + state.random.nextInt(25);
+                    state.snapAt = watcher.getId();
+                    state.nextSnap = now + 160 + state.random.nextInt(240);
+                    entity.world.playSound(entity.getX(), entity.getEyeY(), entity.getZ(), SoundEvents.BLOCK_BONE_BLOCK_HIT,
+                            SoundCategory.HOSTILE, 0.7F, 0.6F, false);
+                }
+            }
+        }
+        float into = now - state.snapStart;
+        if (into < 0.0F || into > state.snapLength || !(entity.world.getEntityById(state.snapAt) instanceof LivingEntity target)) {
+            return null;
+        }
+        // Instant on the way there; slow on the way back
+        float k = into < 1.5F ? into / 1.5F : into > state.snapLength - 10.0F ? (state.snapLength - into) / 10.0F : 1.0F;
+        double dx = target.getX() - entity.getX();
+        double dz = target.getZ() - entity.getZ();
+        double dy = target.getEyeY() - entity.getEyeY();
+        float wanted = (float) (MathHelper.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0F;
+        float headYaw = MathHelper.lerpAngleDegrees(tickDelta, entity.prevHeadYaw, entity.headYaw);
+        float offset = MathHelper.clamp(MathHelper.wrapDegrees(wanted - headYaw), -85.0F, 85.0F);
+        float lookPitch = (float) -(MathHelper.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * (180.0 / Math.PI));
+        float pitchOffset = MathHelper.clamp(lookPitch - entity.getPitch(tickDelta), -40.0F, 40.0F);
+        return new float[]{offset * k * ((float) Math.PI / 180.0F), pitchOffset * k * ((float) Math.PI / 180.0F)};
+    }
+
+    /** Someone close by who is looking straight at the body (not the demon itself). */
+    @Nullable
+    private static LivingEntity watcher(LivingEntity entity) {
+        PlayerEntity rider = PossessedGrin.possessorOf(entity);
+        LivingEntity best = null;
+        double bestDot = 0.93;
+        for (Entity other : entity.world.getOtherEntities(entity, entity.getBoundingBox().expand(12.0),
+                e -> e instanceof LivingEntity && e != rider && e.isAlive())) {
+            Vec3d to = entity.getEyePos().subtract(other.getEyePos()).normalize();
+            double dot = other.getRotationVec(1.0F).dotProduct(to);
+            if (dot > bestDot) {
+                bestDot = dot;
+                best = (LivingEntity) other;
+            }
+        }
+        return best;
     }
 
     // --- arms and legs ----------------------------------------------------------------------------------------
@@ -304,8 +425,11 @@ public final class PossessedMotion {
 
         float c = convulsion(state, now);
         if (c > 0.0F) {
-            pitch += jitter(state.random, 0.9F * c);
-            roll += jitter(state.random, 0.45F * c);
+            // Flailing: the arms are flung about far harder than the legs
+            boolean arm = !biped || index < 2;
+            float hard = (arm ? 1.7F : 1.0F) * (thrashing(state, now) ? 1.35F : 1.0F);
+            pitch += jitter(state.random, 0.9F * c * hard);
+            roll += jitter(state.random, 0.5F * c * hard);
         }
         return pitch == 0.0F && roll == 0.0F ? null : new float[]{pitch, roll};
     }

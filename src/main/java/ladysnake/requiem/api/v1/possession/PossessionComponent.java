@@ -18,4 +18,11 @@ public interface PossessionComponent {
     }
 
     void stopPossessing();
+
+    /** Same as {@code startPossessing(mob, false)}: try to possess this mob now. */
+    default boolean startPossessing(MobEntity mob) {
+        return startPossessing(mob, false);
+    }
+
+    boolean startPossessing(MobEntity mob, boolean simulate);
 }

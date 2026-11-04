@@ -9,7 +9,8 @@ public enum Power {
     TELEPATHY("telepathy", "Telepathy", 100, 86 /* V */, 0.3F, 12, Stages.INFESTATION),
     HEAD_TURN("head_turn", "The head turn", 60, 72 /* H */, 0.9F, 25, Stages.OPPRESSION),
     BILE("bile", "Bile", 80, 66 /* B */, 0.6F, 12, Stages.POSSESSION),
-    TAUNT("taunt", "Taunting", 40, 74 /* J */, 0.25F, 8, Stages.INFESTATION);
+    TAUNT("taunt", "Taunting", 40, 74 /* J */, 0.25F, 8, Stages.INFESTATION),
+    BODY_JUMP("body_jump", "The body jump", 600, 75 /* K */, 1.2F, 20, Stages.POSSESSION);
 
     public final String id;
     public final String title;

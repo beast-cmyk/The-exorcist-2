@@ -1,6 +1,8 @@
 package com.possessedgrin.power;
 
 import com.possessedgrin.PossessedGrin;
+import com.possessedgrin.haunt.Exorcism;
+import com.possessedgrin.haunt.Rite;
 import com.possessedgrin.stage.Stages;
 import com.possessedgrin.voice.Conversation;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
@@ -20,8 +22,8 @@ import java.util.Set;
 
 /**
  * Taunting, no typing needed: the body throws back its head and laughs, bares its teeth and hisses, or lets out a
- * growl so low the ground hums. Whoever you're looking at reacts as if you'd insulted it, and everyone nearby
- * hears it.
+ * growl so low the ground hums, and from stage II it says something cruel, aimed at whoever you're looking at.
+ * They react as if you'd insulted them, everyone nearby hears it, and priests in the middle of a rite lose faith.
  */
 public final class Taunt {
     public static final int LAUGH = 0;
@@ -62,11 +64,47 @@ public final class Taunt {
 
         MobEntity target = Conversation.lookedAt(player, host, 24.0);
         player.sendMessage(Text.literal(describe(kind, host, target, random)).formatted(Formatting.DARK_RED, Formatting.ITALIC), false);
+        String said = null;
+        if (stage >= Stages.OPPRESSION && random.nextFloat() < 0.75F) {
+            // And then it speaks
+            said = cruelty(target, random);
+            Conversation.demonSays(player, host, said);
+        }
+        String sound = kind == LAUGH ? "laughed, high and wrong" : kind == HISS ? "hissed through its teeth" : "growled, so low the floor hummed";
+        Rite.witnessed(host, 6.0F, "It " + sound + (said == null ? "." : ", and said: \"" + said + "\""));
         if (target != null) {
-            Conversation.taunted(player, host, target);
+            Conversation.taunted(player, host, target, said);
         }
         Conversation.bystanders(player, host, target, true);
         return true;
+    }
+
+    /** Something cruel for the body to say, aimed at whoever it's looking at. Every line is original. */
+    private static String cruelty(MobEntity target, Random random) {
+        String you = target == null ? "you" : PossessedGrin.the(target);
+        if (target != null && (Exorcism.isExorcist(target) || Rite.isPriest(target))) {
+            String[] priest = {
+                    "Your faith is a candle, priest. I can see it shaking from here.",
+                    "Say your words. I'll wait. I have all the time there ever was.",
+                    "She asked for you at the end, Father. You weren't there.",
+                    "You don't believe a word of that book. I can taste it on you.",
+                    "Come closer, holy man. Put your hand on its forehead. I dare you."};
+            return priest[random.nextInt(priest.length)];
+        }
+        String[] lines = {
+                "Come closer, " + you + ". I want to see what you look like when you're afraid.",
+                "I know what you did. I was there. I'm always there.",
+                "Nobody is coming to help you. Nobody came for this one either.",
+                "Pray if you like. I enjoy the sound.",
+                "This body is mine now. When it's worn out, I'll try on yours.",
+                "You smell of fear, " + you + ". It suits you.",
+                "Look at its hands. Look at what I've done to its hands.",
+                "Run along. I'll still be here. I'm always here.",
+                "I'm going to keep this one until there's nothing left of it.",
+                "Do you want to hear it scream? It's still in here, you know.",
+                "Sleep well tonight, " + you + ". I'll be under the bed.",
+                "Everyone you love will look like this, in the end."};
+        return lines[random.nextInt(lines.length)];
     }
 
     private static String describe(int kind, MobEntity host, MobEntity target, Random random) {

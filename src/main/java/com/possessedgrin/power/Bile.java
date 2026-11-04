@@ -1,5 +1,7 @@
 package com.possessedgrin.power;
 
+import com.possessedgrin.PossessedGrin;
+import com.possessedgrin.voice.Witness;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.effect.StatusEffectInstance;
@@ -26,6 +28,7 @@ public final class Bile {
 
     static boolean use(ServerPlayerEntity player, MobEntity host) {
         ServerWorld world = (ServerWorld) host.world;
+        Witness.seen(host, null, "You saw " + PossessedGrin.the(host) + " spew green bile.");
         Vec3d look = player.getRotationVec(1.0F);
         Vec3d mouth = player.getEyePos().add(look.multiply(host.getWidth() * 0.6 + 0.3)).add(0.0, -0.25, 0.0);
         Random random = world.getRandom();

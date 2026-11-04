@@ -25,7 +25,7 @@ import java.util.UUID;
 public final class HostSoul {
     private enum Voice {PERSON, UNDEAD, BEAST, PET, GUARDIAN, BOSS}
 
-    private enum Topic {S1, S2, S3, SCREAM2, SCREAM3, APOLOGY, FORGIVE, RELEASE, TAUNT, GREET, QUESTION, IDENTITY, FEELINGS}
+    private enum Topic {S1, S2, S3, SCREAM2, SCREAM3, APOLOGY, FORGIVE, RELEASE, TAUNT, GREET, QUESTION, IDENTITY, FEELINGS, DRAIN, FINAL}
 
     /** Per voice, per topic: lines. For answers, [0] is what it says early on (stages I and II), [1] at the end. */
     private static final Map<Voice, Map<Topic, String[]>> LINES = new EnumMap<>(Voice.class);
@@ -61,22 +61,46 @@ public final class HostSoul {
             return;
         }
         Topic topic = stage >= Stages.POSSESSION ? Topic.S3 : stage == Stages.OPPRESSION ? Topic.S2 : Topic.S1;
-        speak(player, host, pick(host, topic, -1, host.getRandom()), 0);
+        cry(player, host, stage, "(A while has passed in silence. Say whatever comes out of you now: to the demon, to yourself, "
+                + "or to someone you love who can't hear you.)", pick(host, topic, -1, host.getRandom()), 0);
         NEXT.put(player.getUuid(), now + 500 + host.getRandom().nextInt(400));
     }
 
     public static void stageReached(ServerPlayerEntity player, MobEntity host, int stage) {
         Topic scream = stage >= Stages.POSSESSION ? Topic.SCREAM3 : Topic.SCREAM2;
-        speak(player, host, pick(host, scream, -1, host.getRandom()), 20);
+        cry(player, host, stage, stage >= Stages.POSSESSION
+                ? "(It has just taken all of you: you can't feel your body any more. You cry out.)"
+                : "(It has just tightened its grip on you, hard, and your body convulsed. You cry out.)", pick(host, scream, -1, host.getRandom()), 20);
         NEXT.put(player.getUuid(), host.world.getTime() + 400);
     }
 
-    public static void release(MinecraftServer server, UUID rider) {
+    public static void release(MinecraftServer server, UUID rider, boolean died) {
         NEXT.remove(rider);
         ServerPlayerEntity player = server.getPlayerManager().getPlayer(rider);
-        if (player != null) {
+        if (player != null && !died) {
             player.sendMessage(Text.literal("The soul you held slips free. Somewhere, something breathes again.")
                     .formatted(Formatting.DARK_GRAY, Formatting.ITALIC), false);
+        }
+    }
+
+    /** You've drawn half (then most) of its life: it feels it. */
+    public static void drained(ServerPlayerEntity player, MobEntity host) {
+        cry(player, host, Stages.of(host), "(You can feel it eating you: about " + Math.round(Stages.drain(host) * 100.0F)
+                + "% of your life is gone, and your body is " + (Stages.drain(host) >= 0.75F ? "starting to rot" : "wasting away") + ". You feel it.)",
+                pick(host, Topic.DRAIN, -1, host.getRandom()), 30);
+        NEXT.put(player.getUuid(), host.world.getTime() + 400);
+    }
+
+    /** The body is spent. */
+    public static void lastWords(ServerPlayerEntity player, MobEntity host) {
+        cry(player, host, Stages.of(host), "(This is the end. Your body is falling apart and you're going. Your last words.)",
+                pick(host, Topic.FINAL, -1, host.getRandom()), 0);
+    }
+
+    /** The soul speaks up on its own: in its own words with the AI, else {@code fallback}. */
+    private static void cry(ServerPlayerEntity player, MobEntity host, int stage, String cue, String fallback, int delay) {
+        if (!AiVoice.soulLine(player, host, stage, cue, fallback, line -> speak(player, host, line, 0))) {
+            speak(player, host, fallback, delay);
         }
     }
 
@@ -100,7 +124,17 @@ public final class HostSoul {
         String line = topic == null
                 ? pick(host, stage >= Stages.POSSESSION ? Topic.S3 : stage == Stages.OPPRESSION ? Topic.S2 : Topic.S1, -1, random)
                 : pick(host, topic, late, random);
-        speak(player, host, line, 20 + random.nextInt(20));
+        if (topic == Topic.QUESTION || topic == null) {
+            // Built-in generator: it answers about whatever you asked, as a soul in torment would
+            String aboutIt = Phrasebook.soulAboutTopic(message, host, late == 1, random);
+            if (aboutIt != null && random.nextFloat() < 0.6F) {
+                line = aboutIt;
+            }
+        }
+        // With an API key, a real AI gives the soul its words (this line is used if it can't)
+        if (!AiVoice.askSoul(player, host, stage, message, line, reply -> speak(player, host, reply, 0))) {
+            speak(player, host, line, 20 + random.nextInt(20));
+        }
         // It just spoke: give it a moment before it speaks up on its own again
         NEXT.put(player.getUuid(), Math.max(NEXT.getOrDefault(player.getUuid(), 0L), host.world.getTime() + 300));
     }
@@ -167,6 +201,9 @@ public final class HostSoul {
         put(Voice.PERSON, Topic.QUESTION, "I don't know! I don't know anything! Just get out!", "...I don't remember... I don't remember my own name...");
         put(Voice.PERSON, Topic.IDENTITY, "I'm the one who LIVES here!", "...I was a {host}. I think. I think I was.");
         put(Voice.PERSON, Topic.FEELINGS, "How do you think I feel?! There's a monster in my skin!", "...nothing. I feel nothing. Is that bad?");
+        put(Voice.PERSON, Topic.DRAIN, "You're eating me. I can feel you eating me from the inside.", "I'm so thin. I can feel my own bones.",
+                "There won't be anything left of me. Will there?");
+        put(Voice.PERSON, Topic.FINAL, "...it's quiet now... is it over...?", "...tell them... I tried...", "...so cold... and then... not...");
 
         // --- the walking dead ---------------------------------------------------------------------------------
         put(Voice.UNDEAD, Topic.S1, "Hhhrr... I was resting. I was finally resting.", "Two of us in here now. Not enough room.",
@@ -185,6 +222,8 @@ public final class HostSoul {
         put(Voice.UNDEAD, Topic.QUESTION, "Don't... know. Rotten. All rotten.", "...gone... the words are gone...");
         put(Voice.UNDEAD, Topic.IDENTITY, "Was... somebody. Before. Now... this.", "...nobody... I'm nobody...");
         put(Voice.UNDEAD, Topic.FEELINGS, "Cold. Crowded. Angry.", "...like the grave... but lonelier...");
+        put(Voice.UNDEAD, Topic.DRAIN, "Even the rot... is being eaten...", "Hhh... hollow... you've hollowed me out...");
+        put(Voice.UNDEAD, Topic.FINAL, "...back to the earth... finally...", "...rest... at last...");
 
         // --- beasts and monsters ------------------------------------------------------------------------------
         put(Voice.BEAST, Topic.S1, "*it panics* Wrong. Wrong. Something is wrong.", "Cold. Inside. Run? Can't run. Legs won't.",
@@ -203,6 +242,8 @@ public final class HostSoul {
         put(Voice.BEAST, Topic.QUESTION, "Don't know! Scared! Scared!", "...dark... only dark...");
         put(Voice.BEAST, Topic.IDENTITY, "{host}! Just a {host}! Small! Leave!", "...was... a {host}...");
         put(Voice.BEAST, Topic.FEELINGS, "Scared! Cold! Hurts!", "...sleepy... so sleepy...");
+        put(Voice.BEAST, Topic.DRAIN, "*it's too weak to whimper*", "Tired... so tired... so hungry...");
+        put(Voice.BEAST, Topic.FINAL, "*one last, small breath*", "*a soft sigh, and then nothing*");
 
         // --- pets ---------------------------------------------------------------------------------------------
         put(Voice.PET, Topic.S1, "*whines* Where's {owner}? Something's in my head. Where's {owner}?",
@@ -220,6 +261,8 @@ public final class HostSoul {
         put(Voice.PET, Topic.QUESTION, "I don't know! I'm just a {host}!", "...I don't know... I'm sorry...");
         put(Voice.PET, Topic.IDENTITY, "I'm {owner}'s {host}! Their good {host}!", "...somebody's... {host}...");
         put(Voice.PET, Topic.FEELINGS, "Scared! I want {owner}!", "...cold... is it bedtime...?");
+        put(Voice.PET, Topic.DRAIN, "...I'm so tired... can I lie down by the fire...?", "...is {owner} coming...?");
+        put(Voice.PET, Topic.FINAL, "...good {host}... I was a good {host}...", "...tell {owner}... I waited...");
 
         // --- golems -------------------------------------------------------------------------------------------
         put(Voice.GUARDIAN, Topic.S1, "*grind* Intrusion detected in my core. Identify yourself.",
@@ -236,6 +279,8 @@ public final class HostSoul {
         put(Voice.GUARDIAN, Topic.QUESTION, "*grind* I will tell you nothing, intruder.", "...memory... corrupted...");
         put(Voice.GUARDIAN, Topic.IDENTITY, "I am the guardian of this village.", "...I was... a guardian...");
         put(Voice.GUARDIAN, Topic.FEELINGS, "*creak* Compromised. Furious.", "...rusting... from inside...");
+        put(Voice.GUARDIAN, Topic.DRAIN, "*creak* Structural failure... spreading...", "...iron... turning... to rust...");
+        put(Voice.GUARDIAN, Topic.FINAL, "...village... safe...?", "*a last, slow clank*");
 
         // --- bosses -------------------------------------------------------------------------------------------
         put(Voice.BOSS, Topic.S1, "You dare? You DARE crawl inside ME?", "Small thing. I will burn you out of my veins.",
@@ -254,5 +299,7 @@ public final class HostSoul {
         put(Voice.BOSS, Topic.QUESTION, "I owe you no answers.", "...I knew so much... once...");
         put(Voice.BOSS, Topic.IDENTITY, "I am the {host}. I am the end of things.", "...I was... the {host}...");
         put(Voice.BOSS, Topic.FEELINGS, "Wrath. Pure wrath.", "...small. I feel... small.");
+        put(Voice.BOSS, Topic.DRAIN, "...you are devouring me. ME.", "...ages I have lived... and you eat them like bread...");
+        put(Voice.BOSS, Topic.FINAL, "...so this... is how an ending feels...", "...remember... what I was...");
     }
 }
